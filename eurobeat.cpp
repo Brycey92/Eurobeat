@@ -17,10 +17,8 @@
 #include "canutil.h"
 #include "util.h"
 
-#define AUDIO_TEST_ONLY 1
-
-#define CUT_MUSIC_DIR "cutmusic/"
-#define MUSIC_DIR "music/"
+#define CUT_MUSIC_DIR "/home/tc/cutmusic/"
+#define MUSIC_DIR "/home/tc/music/"
 
 using namespace std;
 
@@ -34,6 +32,9 @@ int main(int argc, char* argv[]) {
 	
 	#if !AUDIO_TEST_ONLY
 	sock = openCan();
+	#if DEBUG
+	cout << "Opened CAN bus.\n";
+	#endif
 	#endif
 	
 	//initialize PortAudio
@@ -49,15 +50,55 @@ int main(int argc, char* argv[]) {
 		memset(&sfData, 0, sizeof(callback_data));
 		
 		string filePathStr = CUT_MUSIC_DIR;
-		filePathStr += "dejavu.wav";//getRandFile(audioFiles);
+		filePathStr += "dejavu.ogg";//getRandFile(audioFiles);
 		
 		if(!openAudioFile(filePathStr, &sfData)) {
 			exit(EXIT_FAILURE);
 		}
 		
+		//find a device to open a stream on
+		PaStreamParameters outputParameters;
+		getPaDevice(&sfData, &outputParameters, true, true);
+		
 		//open a PortAudio stream
 		PaStream *stream;
-		openPaStream(&sfData, stream);
+		if(outputParameters.device >= 0) {
+			handlePa(Pa_OpenStream( &stream,
+									NULL,
+									&outputParameters,
+									sfData.info.samplerate,
+									FRAMES_PER_BUFFER, /* frames per buffer, i.e. the number
+													   of sample frames that PortAudio will
+													   request from the callback. Many apps
+													   may want to use
+													   paFramesPerBufferUnspecified, which
+													   tells PortAudio to pick the best,
+													   possibly changing, buffer size. */
+									paNoFlag, 		   /* flags that can be used to define
+													   dither, clip settings and more */
+									paCallback, 	   /* this is your callback function */
+									&sfData ));		   /* data to be passed to callback */
+		}
+		else {
+			handlePa(Pa_OpenDefaultStream( &stream,
+										0,          	   /* no input channels */
+										sfData.info.channels,/* stereo output */
+										paFloat32,  	   /* 32 bit floating point output */
+										sfData.info.samplerate,
+										FRAMES_PER_BUFFER, /* frames per buffer, i.e. the number
+														   of sample frames that PortAudio will
+														   request from the callback. Many apps
+														   may want to use
+														   paFramesPerBufferUnspecified, which
+														   tells PortAudio to pick the best,
+														   possibly changing, buffer size. */
+										paCallback, 	   /* this is your callback function */
+										&sfData ));   	   /* data to be passed to callback */
+		}
+		
+		#if DEBUG
+		cout << "Audio stream opened.\n";
+		#endif
 		
 		struct can_frame* frame;
 		
@@ -65,14 +106,19 @@ int main(int argc, char* argv[]) {
 		
 		//keep reading frames until the gas pedal is pressed far enough
 		while(!playedFile) {
+			#if DEBUG
+			cout << "Inside while(!playedFile) loop.\n";
+			#endif
+			
 			#if !AUDIO_TEST_ONLY
 			#if DEBUG
 			cout << "Waiting for CAN messages.";
+			cout.flush();
 			#endif
 			
 			/* Read from the CAN interface */
 			while(!readCan(frame, sock)) {
-				#if DEBUG
+				#if ANNOYING_DEBUG
 				cout << ".";
 				#endif
 			}
@@ -96,7 +142,15 @@ int main(int argc, char* argv[]) {
 						while(handlePa(Pa_IsStreamActive(stream))) {
 							/* Read from the CAN interface */
 							#if !AUDIO_TEST_ONLY
-							while(!readCan(frame, sock)) {}
+							#if DEBUG
+							cout << "Waiting for CAN messages,";
+							cout.flush();
+							#endif
+							while(!readCan(frame, sock)) {
+								#if ANNOYING_DEBUG
+								cout << ",";
+								#endif
+							}
 							
 							//check the frame's data
 							if(frame->can_dlc > ACCELERATOR_BYTE_INDEX) {

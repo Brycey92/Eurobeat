@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include <string.h>
+#include <unistd.h>
 
 using namespace std;
 
@@ -49,103 +50,82 @@ bool openAudioFile(string filePathStr, callback_data *sfData) {
 	}
 }
 
-void openPaStream(callback_data *sfData, PaStream *stream) {
-	int numDevices = handlePa(Pa_GetDeviceCount());
+//if onlyUsb is true, and waitForDevices is false, exit if no USB devices are found
+//if onlyUsb is false, and waitForDevices is true, keep checking until any device is found, USB preferred
+//if both are true, keep checking until a USB device is found
+//if both are false, return any device that's ready, USB preferred, or exit if none are found
+
+void getPaDevice(callback_data *sfData, PaStreamParameters *outputParameters, bool onlyUsb, bool waitForDevices) {
+	memset(outputParameters, 0, sizeof(PaStreamParameters));
 	
-	if(numDevices == 0) {
-		cerr << "No audio devices detected.\n";
-		exit(EXIT_FAILURE);
-	}
-	
-	//begin opening PortAudio stream
-	stream = NULL;
-	
-	//if we have multiple audio devices, get their info
-	//const PaDeviceInfo *deviceInfo;
-	if(numDevices > 1) {
-		//structs for checking device compatibility with the audio file
-		PaStreamParameters outputParameters;
-		//memset(&outputParameters, 0, sizeof(PaStreamParameters));
-		
-		outputParameters.channelCount = sfData->info.channels; /* stereo output */
-		outputParameters.sampleFormat = paFloat32; 			  /* 32 bit floating point output */
-		outputParameters.hostApiSpecificStreamInfo = NULL;	  /* See your specific host's API docs
-															  for info on using this field */
-		
-		//check each device's info
-		for(int i = 0; numDevices > 1 && stream == NULL && i < numDevices; i++) {
-			string name = Pa_GetDeviceInfo(i)->name;
-			#if DEBUG
-			cout << "Found audio device: " << name << endl;
-			#endif
+	do {
+		int numDevices = handlePa(Pa_GetDeviceCount());
+		if(numDevices == 0 && !waitForDevices) {
+			//numDevices = 0 and waitForDevices = false
+			cerr << "No audio devices detected.\n";
+			exit(EXIT_FAILURE);
+		}
+		//if we have multiple audio devices, get their info
+		//const PaDeviceInfo *deviceInfo;
+		else if(numDevices > 0) {
+			outputParameters->channelCount = sfData->info.channels; /* stereo output */
+			outputParameters->sampleFormat = paFloat32; 			  /* 32 bit floating point output */
+			outputParameters->hostApiSpecificStreamInfo = NULL;	  /* See your specific host's API docs
+																  for info on using this field */
 			
-			string lowerName = to_lower(name);
-			#if DEBUG
-			cout << "Lowercase device name: " << lowerName << endl;
-			#endif
-			
-			//check if the current device is a USB device
-			if(lowerName.find("usb") != std::string::npos) {
+			//check each device's info
+			for(int i = 0; numDevices > 1 && i < numDevices; i++) {
+				string name = Pa_GetDeviceInfo(i)->name;
 				#if DEBUG
-				cout << "Trying to open stream on " << name << endl;
+				cout << "Found audio device: " << name << endl;
 				#endif
 				
-				outputParameters.device = i;
-				outputParameters.suggestedLatency = Pa_GetDeviceInfo(i)->defaultLowOutputLatency;
-				
-				//make sure the device supports the audio file
-				PaError err = handlePa(Pa_IsFormatSupported(NULL, &outputParameters, sfData->info.samplerate));
-				if(err == paFormatIsSupported) {
-					//if everything checks out, open a stream on the current device
-					handlePa(Pa_OpenStream( &stream,
-											NULL,
-											&outputParameters,
-											sfData->info.samplerate,
-											FRAMES_PER_BUFFER, /* frames per buffer, i.e. the number
-															   of sample frames that PortAudio will
-															   request from the callback. Many apps
-															   may want to use
-															   paFramesPerBufferUnspecified, which
-															   tells PortAudio to pick the best,
-															   possibly changing, buffer size. */
-											paNoFlag, 		   /* flags that can be used to define
-															   dither, clip settings and more */
-											paCallback, 	   /* this is your callback function */
-											sfData ));		   /* data to be passed to callback */
-				}
+				string lowerName = to_lower(name);
 				#if DEBUG
-				else {
-					cout << "Device " << name << "doesn't support the audio file:\n";
-					cout << "Channels: " << outputParameters.channelCount << endl;
-					cout << "Sample rate: " << sfData->info.samplerate << endl;
-					cout << "Suggested latency: " << outputParameters.suggestedLatency << endl;
-				}
+				cout << "Lowercase device name: " << lowerName << endl;
 				#endif
+				
+				//check if the current device is a USB device
+				if(lowerName.find("usb") != std::string::npos) {
+					#if DEBUG
+					cout << "Trying to open stream on " << name << endl;
+					#endif
+					
+					outputParameters->device = i;
+					outputParameters->suggestedLatency = Pa_GetDeviceInfo(i)->defaultLowOutputLatency;
+					
+					//make sure the device supports the audio file
+					PaError err = handlePa(Pa_IsFormatSupported(NULL, outputParameters, sfData->info.samplerate));
+					if(err == paFormatIsSupported) {
+						//if everything checks out, return the current device's outputParameters
+						return;
+					}
+					#if DEBUG
+					else {
+						cout << "Device " << name << "doesn't support the audio file:\n";
+						cout << "Channels: " << outputParameters->channelCount << endl;
+						cout << "Sample rate: " << sfData->info.samplerate << endl;
+						cout << "Suggested latency: " << outputParameters->suggestedLatency << endl;
+					}
+					#endif
+				}
+			}
+			
+			//no devices are USB
+			if(!onlyUsb) {
+				cerr << "No USB audio devices detected. Using default device.\n";
+				outputParameters->device = -1;
+				return;
+			}
+			else if(!waitForDevices) {
+				cerr << "No USB audio devices detected.\n";
+				exit(EXIT_FAILURE);
 			}
 		}
-	}
-	
-	//if no stream was opened...
-	if(stream == NULL) {
-		//we either have multiple devices, none of which are USB...
-		if(numDevices > 1) {
-			cerr << "No USB audio devices detected. Using default device.\n";
-		}
-		
-		//or, we have one device. either way, we open a stream on the default device
-		handlePa(Pa_OpenDefaultStream( &stream,
-										0,          	   /* no input channels */
-										sfData->info.channels,/* stereo output */
-										paFloat32,  	   /* 32 bit floating point output */
-										sfData->info.samplerate,
-										FRAMES_PER_BUFFER, /* frames per buffer, i.e. the number
-														   of sample frames that PortAudio will
-														   request from the callback. Many apps
-														   may want to use
-														   paFramesPerBufferUnspecified, which
-														   tells PortAudio to pick the best,
-														   possibly changing, buffer size. */
-										paCallback, 	   /* this is your callback function */
-										sfData ));   	   /* data to be passed to callback */
-	}
+		//we're supposed to wait for the list of devices to change, so let the loop run again after a delay
+		#if DEBUG
+		cout << "Waiting " << (WAIT_FOR_DEVICES_US / 1000.0) << "ms for audio devices.\n";
+		#endif
+		usleep(WAIT_FOR_DEVICES_US);
+	} while(waitForDevices);
 }
