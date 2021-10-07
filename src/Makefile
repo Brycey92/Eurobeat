@@ -49,6 +49,9 @@ release : MORECFLAGS=-O2
 
 all release debug pedantic : $(BIN)
 
+old:
+	g++ -g -o eurobeat eurobeat.h util.cpp audioutil.cpp canutil.cpp -Iportaudio/include/ -lportaudio -lsndfile
+
 $(BIN): $(OBJS)
 	$(LINK) $(LINKFLAGS) $(FLAGS) -o $(BIN) $(OBJS) $(LINKLIBS)
 
