@@ -11,8 +11,8 @@ using namespace std;
 
 PaError handlePa(PaError err) {
 	if( err < 0/*!= paNoError*/ ) {
-		cerr << "PortAudio error: " << Pa_GetErrorText(err) << endl;
-		exit(EXIT_FAILURE);
+		cerr << "PortAudio error: " << Pa_GetErrorText(err) << " (" << err << ")\n";
+		exit(err);
 	}
 	else {
 		return err;
@@ -22,6 +22,9 @@ PaError handlePa(PaError err) {
 int paCallback(const void *inputBuffer, void *outputBuffer, unsigned long framesPerBuffer,
 		const PaStreamCallbackTimeInfo* timeInfo, PaStreamCallbackFlags statusFlags, void *userData) {
 	float *out = (float*) outputBuffer;
+	(void)inputBuffer;
+	(void)timeInfo;
+	(void)statusFlags;
     callback_data *data = (callback_data*)userData;
 
     /* clear output buffer */
@@ -54,15 +57,14 @@ bool openAudioFile(string filePathStr, callback_data *sfData) {
 //if onlyUsb is false, and waitForDevices is true, keep checking until any device is found, USB preferred
 //if both are true, keep checking until a USB device is found
 //if both are false, return any device that's ready, USB preferred, or exit if none are found
-
-void getPaDevice(callback_data *sfData, PaStreamParameters *outputParameters, bool onlyUsb, bool waitForDevices) {
+bool getPaDevice(callback_data *sfData, PaStreamParameters *outputParameters, bool onlyUsb, bool waitForDevices) {
 	memset(outputParameters, 0, sizeof(PaStreamParameters));
 	
-	do {
+	//do {
 		int numDevices = handlePa(Pa_GetDeviceCount());
 		if(numDevices == 0 && !waitForDevices) {
 			//numDevices = 0 and waitForDevices = false
-			cerr << "No audio devices detected.\n";
+			cerr << "No audio devices detected!\n";
 			exit(EXIT_FAILURE);
 		}
 		//if we have multiple audio devices, get their info
@@ -81,14 +83,11 @@ void getPaDevice(callback_data *sfData, PaStreamParameters *outputParameters, bo
 				#endif
 				
 				string lowerName = to_lower(name);
-				#if DEBUG
-				cout << "Lowercase device name: " << lowerName << endl;
-				#endif
 				
 				//check if the current device is a USB device
 				if(lowerName.find("usb") != std::string::npos) {
 					#if DEBUG
-					cout << "Trying to open stream on " << name << endl;
+					cout << "Checking audio file support on " << name << endl;
 					#endif
 					
 					outputParameters->device = i;
@@ -98,7 +97,7 @@ void getPaDevice(callback_data *sfData, PaStreamParameters *outputParameters, bo
 					PaError err = handlePa(Pa_IsFormatSupported(NULL, outputParameters, sfData->info.samplerate));
 					if(err == paFormatIsSupported) {
 						//if everything checks out, return the current device's outputParameters
-						return;
+						return true;
 					}
 					#if DEBUG
 					else {
@@ -115,17 +114,18 @@ void getPaDevice(callback_data *sfData, PaStreamParameters *outputParameters, bo
 			if(!onlyUsb) {
 				cerr << "No USB audio devices detected. Using default device.\n";
 				outputParameters->device = -1;
-				return;
+				return true;
 			}
 			else if(!waitForDevices) {
-				cerr << "No USB audio devices detected.\n";
+				cerr << "No USB audio devices detected!\n";
 				exit(EXIT_FAILURE);
 			}
 		}
-		//we're supposed to wait for the list of devices to change, so let the loop run again after a delay
+		//we're supposed to wait for the list of devices to change, so let the loop run again after 50ms
 		#if DEBUG
 		cout << "Waiting " << (WAIT_FOR_DEVICES_US / 1000.0) << "ms for audio devices.\n";
 		#endif
 		usleep(WAIT_FOR_DEVICES_US);
-	} while(waitForDevices);
+		return false;
+	//} while(waitForDevices);
 }

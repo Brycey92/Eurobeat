@@ -22,14 +22,12 @@ typedef struct {
 	struct can_frame frame[NFRAMES];
 } can_msg;
 
-static void onsig(int val);
-
 void print_can_frame(struct can_frame* const frame);
 
 int openCan();
 
 void closeCan(int sock);
 
-bool readCan(struct can_frame* frame, int sock);
+bool readCan(struct can_frame** frame, int sock);
 
 #endif

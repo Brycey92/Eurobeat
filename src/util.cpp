@@ -1,3 +1,4 @@
+#include "eurobeat.h"
 #include "util.h"
 
 #include <cctype>
@@ -15,7 +16,7 @@ using namespace std;
 
 string to_lower(string str) {
 	string retStr = str;
-	for(int i = 0; i < str.length(); i++) {
+	for(unsigned int i = 0; i < str.length(); i++) {
 		retStr[i] = tolower(str[i]);
 	}
 	return retStr;
@@ -27,6 +28,9 @@ string getRandFile(vector<string> audioFiles) {
 		generator = default_random_engine(chrono::system_clock::now().time_since_epoch().count());
 		uniform_int_distribution<int> distribution(0,audioFiles.size() - 1);
 		return audioFiles[distribution(generator)];
+	}
+	else {
+		return NULL;
 	}
 }
 
@@ -58,4 +62,6 @@ void enumerateFiles(vector<string>* audioFiles) {
 			#endif
 		}
 	}*/
+	
+	audioFiles->push_back("dejavu.ogg");
 }

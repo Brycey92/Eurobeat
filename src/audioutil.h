@@ -8,7 +8,7 @@
 #include <string>
 
 #define FRAMES_PER_BUFFER (512)
-#define WAIT_FOR_DEVICES_US 50000;
+#define WAIT_FOR_DEVICES_US 50000
 
 typedef struct {
 	SNDFILE* file;
@@ -21,6 +21,6 @@ int paCallback(const void *inputBuffer, void *outputBuffer, unsigned long frames
 
 bool openAudioFile(std::string filePathStr, callback_data *sfData);
 
-void getPaDevice(callback_data *sfData, PaStreamParameters *outputParameters, bool onlyUsb, bool waitForDevices);
+bool getPaDevice(callback_data *sfData, PaStreamParameters *outputParameters, bool onlyUsb, bool waitForDevices);
 
 #endif

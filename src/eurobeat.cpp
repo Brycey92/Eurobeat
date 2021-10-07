@@ -23,12 +23,13 @@
 using namespace std;
 
 int main(int argc, char* argv[]) {
+	(void)argc;
+	(void)argv;
 	const uint8_t byteRange = (ACCELERATOR_BYTE_MAX - ACCELERATOR_BYTE_MIN);
-	const uint8_t activationValue = byteRange * (ACTIVATION_PERCENT / 100) + ACCELERATOR_BYTE_MIN;
-	const uint8_t deactivationValue = byteRange * (DEACTIVATION_PERCENT / 100) + ACCELERATOR_BYTE_MIN;
+	const uint8_t activationValue = byteRange * (ACTIVATION_PERCENT / 100.0) + ACCELERATOR_BYTE_MIN;
+	const uint8_t deactivationValue = byteRange * (DEACTIVATION_PERCENT / 100.0) + ACCELERATOR_BYTE_MIN;
 
 	int sock;
-	can_msg msg;
 	
 	#if !AUDIO_TEST_ONLY
 	sock = openCan();
@@ -37,28 +38,42 @@ int main(int argc, char* argv[]) {
 	#endif
 	#endif
 	
-	//initialize PortAudio
-	handlePa(Pa_Initialize());
-	
 	//keep checking for gas pedal messages and playing eurobeat when appropriate
 	while(sigval == 0) {
 		//generate a vector of all audio files
 		vector<string> audioFiles;
+		enumerateFiles(&audioFiles);
 		
 		//pick a random audio file and open it
 		callback_data sfData;
 		memset(&sfData, 0, sizeof(callback_data));
 		
 		string filePathStr = CUT_MUSIC_DIR;
-		filePathStr += "dejavu.ogg";//getRandFile(audioFiles);
+		filePathStr += getRandFile(audioFiles);
 		
 		if(!openAudioFile(filePathStr, &sfData)) {
 			exit(EXIT_FAILURE);
 		}
 		
-		//find a device to open a stream on
 		PaStreamParameters outputParameters;
-		getPaDevice(&sfData, &outputParameters, true, true);
+		
+		bool suitableDeviceFound = false;
+		
+		do {
+			//initialize PortAudio
+			handlePa(Pa_Initialize());
+			
+			//find a device to open a stream on
+			suitableDeviceFound = getPaDevice(&sfData, &outputParameters, true, true);
+			if(!suitableDeviceFound) {
+				//terminate PortAudio
+				handlePa(Pa_Terminate());
+			}
+		} while(!suitableDeviceFound);
+		
+		#if DEBUG
+		cout << "Initialized PortAudio and selected an audio device.\n";
+		#endif
 		
 		//open a PortAudio stream
 		PaStream *stream;
@@ -100,16 +115,12 @@ int main(int argc, char* argv[]) {
 		cout << "Audio stream opened.\n";
 		#endif
 		
-		struct can_frame* frame;
+		struct can_frame* frame = NULL;
 		
 		bool playedFile = false;
 		
 		//keep reading frames until the gas pedal is pressed far enough
 		while(!playedFile) {
-			#if DEBUG
-			cout << "Inside while(!playedFile) loop.\n";
-			#endif
-			
 			#if !AUDIO_TEST_ONLY
 			#if DEBUG
 			cout << "Waiting for CAN messages.";
@@ -117,21 +128,24 @@ int main(int argc, char* argv[]) {
 			#endif
 			
 			/* Read from the CAN interface */
-			while(!readCan(frame, sock)) {
+			while(!readCan(&frame, sock)) {
 				#if ANNOYING_DEBUG
 				cout << ".";
 				#endif
 			}
+			/*#if DEBUG
+			cout << "\nRecv ID: " << hex << frame->can_id << ", Data: " << hex << frame->data << endl;
+			#endif*/
 			
 			//check the frame's data
 			if(frame->can_dlc > ACCELERATOR_BYTE_INDEX) {
-				if(frame->data[ACCELERATOR_BYTE_INDEX] > activationValue) {
+				if(frame->data[ACCELERATOR_BYTE_INDEX] >= activationValue) {
 			#endif
 					//play audio
 					handlePa(Pa_StartStream(stream));
 					playedFile = true;
 					#if DEBUG
-					cout << "Playing audio... ";
+					cout << "Playing audio.\n";
 					#endif
 					
 					//stay in this loop while the stream is not stopped
@@ -146,11 +160,15 @@ int main(int argc, char* argv[]) {
 							cout << "Waiting for CAN messages,";
 							cout.flush();
 							#endif
-							while(!readCan(frame, sock)) {
+							while(!readCan(&frame, sock)) {
 								#if ANNOYING_DEBUG
 								cout << ",";
 								#endif
 							}
+							
+							/*#if DEBUG
+							cout << "\nRecv ID: " << hex << frame->can_id << ", Data: " << hex << frame->data << endl;
+							#endif*/
 							
 							//check the frame's data
 							if(frame->can_dlc > ACCELERATOR_BYTE_INDEX) {
@@ -159,7 +177,7 @@ int main(int argc, char* argv[]) {
 									if(!handlePa(Pa_IsStreamStopped(stream))) {
 										handlePa(Pa_AbortStream(stream));
 										#if DEBUG
-										cout << "stopped due to gas pedal position.\n";
+										cout << "Stopped audio due to gas pedal position.\n";
 										#endif
 									}
 								}
@@ -176,7 +194,7 @@ int main(int argc, char* argv[]) {
 							if(!handlePa(Pa_IsStreamStopped(stream))) {
 								handlePa(Pa_StopStream(stream));
 								#if DEBUG
-								cout << "done.\n";
+								cout << "Done.\n";
 								#endif
 							}
 						//}
@@ -197,10 +215,11 @@ int main(int argc, char* argv[]) {
 			}
 			#endif
 		}
+		//after the file is played
+		
+		//terminate PortAudio
+		handlePa(Pa_Terminate());
 	}
-	
-	//terminate PortAudio
-	handlePa(Pa_Terminate());
 	
 	/* Close the CAN interface */
 	#if !AUDIO_TEST_ONLY
