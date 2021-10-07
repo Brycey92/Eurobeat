@@ -1,6 +1,6 @@
 SHELL=/bin/sh
 
-BIN=eurobeat
+BIN=../build/eurobeat
 
 OS=$(shell uname)
 ifeq ($(findstring CYGWIN,$(OS)),CYGWIN)
