@@ -22,7 +22,7 @@ SOURCES.cpp := $(wildcard *.cpp)
 
 CC=g++
 LINK=g++
-CFLAGS=$(NOCYGWIN) -c -I. -Iportaudio/include/ -MMD -MP -fpic -W -Wall
+CFLAGS=$(NOCYGWIN) -c -Ilib -Ilib/portaudio/include/ -MMD -MP -fpic -W -Wall
 MORECFLAGS=
 LINKFLAGS=-g -lm -L. $()
 LINKLIBS=-lportaudio -lsndfile
